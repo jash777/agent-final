@@ -6,7 +6,7 @@ set -u  # Treat unset variables as an error
 
 # Function to log messages
 log() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" | tee -a /var/log/flaskagent_setup.log
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" | tee -a /var/log/serveragent_setup.log
 }
 
 # Function to check if a command succeeded
@@ -21,20 +21,31 @@ check_success() {
 
 # Check if script is run as root
 if [[ $EUID -ne 0 ]]; then
-   log "This script must be run as root" 
-   exit 1
+   log "This script must be run as root"
+    exit 1
 fi
 
 log "Starting Flask Agent setup..."
 
-# Step 1: Create a dedicated user for the agent
+# Step 1: Install Git
+log "Installing Git..."
+apt-get update
+apt-get install -y git
+check_success "Git installation"
+
+# Step 2: Clone the repository
+log "Cloning the repository..."
+git clone https://github.com/jash777/agent-final.git /opt/serveragent
+check_success "Repository cloning"
+
+# Step 3: Create a dedicated user for the agent
 log "Creating dedicated user..."
-id -u flaskagent &>/dev/null || useradd -r -s /bin/false flaskagent
+id -u serveragent &>/dev/null || useradd -r -s /bin/false serveragent
 check_success "User creation"
 
-# Step 2: Create a virtual environment
+# Step 4: Create a virtual environment
 log "Creating virtual environment..."
-python3 -m venv /opt/flaskagent_env
+python3 -m venv /opt/serveragent_env
 check_success "Virtual environment creation"
 
 # Merging to use only iptables instead of nftables
@@ -44,81 +55,73 @@ update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
 iptables -L
 check_success "iptables configuration"
 
-# Step 3: Install dependencies in the virtual environment
+# Step 5: Install dependencies in the virtual environment
 log "Installing dependencies..."
-/opt/serveragnet_env/bin/pip install --no-cache-dir flask flask-socketio python-dotenv psutil
+/opt/serveragent_env/bin/pip install --no-cache-dir -r /opt/serveragent/requirements.txt
 check_success "Dependency installation"
 
-# Step 4: Copy agent script and other necessary files
-log "Copying agent files..."
-mkdir -p /opt/flaskagent
-cp main.py /opt/flaskagent/
-cp manage.py /opt/flaskagent/
-cp .env /opt/flaskagent/
-check_success "File copying"
-
-# Step 5: Set proper permissions
+# Step 6: Set proper permissions
 log "Setting permissions..."
-chown -R flaskagent:flaskagent /opt/flaskagent
-chmod 750 /opt/flaskagent
-chmod 640 /opt/flaskagent/.env
+chown -R serveragent:serveragent /opt/serveragent
+chmod 750 /opt/serveragent
+chmod 640 /opt/serveragent/.env
 check_success "Permission setting"
 
-# Step 6: Create a systemd service file
+# Step 7: Create a systemd service file
 log "Creating systemd service..."
-cat << EOF > /etc/systemd/system/flaskagent.service
+cat << EOF > /etc/systemd/system/serveragent.service
 [Unit]
 Description=Flask Agent Service
 After=network.target
 
 [Service]
-User=flaskagent
-Group=flaskagent
-WorkingDirectory=/opt/flaskagent
-ExecStart=/opt/flaskagent_env/bin/python /opt/flaskagent/agent.py
+User=serveragent
+Group=serveragent
+WorkingDirectory=/opt/serveragent
+ExecStart=/opt/serveragent_env/bin/python /opt/serveragent/main.py
 Restart=always
 RestartSec=10
 StandardOutput=syslog
 StandardError=syslog
-SyslogIdentifier=flaskagent
+SyslogIdentifier=serveragent
 
 [Install]
 WantedBy=multi-user.target
 EOF
 check_success "Systemd service creation"
 
-# Step 7: Create a sudoers file for the agent
+# Step 8: Create a sudoers file for the agent
 log "Configuring sudoers..."
-echo "flaskagent ALL=(ALL) NOPASSWD: /sbin/iptables" > /etc/sudoers.d/flaskagent
-chmod 0440 /etc/sudoers.d/flaskagent
+echo "serveragent ALL=(ALL) NOPASSWD: /sbin/iptables" > /etc/sudoers.d/serveragent
+chmod 0440 /etc/sudoers.d/serveragent
 check_success "Sudoers configuration"
 
-# Step 8: Reload systemd and start the service
+# Step 9: Reload systemd and start the service
 log "Starting Flask Agent service..."
 systemctl daemon-reload
-systemctl start flaskagent
-systemctl enable flaskagent
+systemctl start serveragent
+systemctl enable serveragent
 check_success "Service start"
 
-# Step 9: Set up log rotation
+# Step 10: Set up log rotation
 log "Setting up log rotation..."
-cat << EOF > /etc/logrotate.d/flaskagent
-/var/log/flaskagent.log {
+cat << EOF > /etc/logrotate.d/serveragent
+/var/log/serveragent.log {
     weekly
     missingok
     rotate 7
     compress
     delaycompress
     notifempty
-    create 640 flaskagent flaskagent
+    create 640 serveragent serveragent
 }
 EOF
 check_success "Log rotation setup"
 
-# Step 10: Set up basic firewall rules
+# Step 11: Set up basic firewall rules
 log "Setting up firewall rules..."
 iptables-save > /etc/iptables/rules.v4
 check_success "Firewall configuration"
 
 log "Flask Agent setup complete and service started."
-log "Please review the setup log at /var/log/flaskagent_setup.log for any issues."
+log "Please review the setup log at /var/log/serveragent_setup.log for any issues."
