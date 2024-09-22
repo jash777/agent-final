@@ -1,2 +1,13 @@
-flask
-
+Flask
+Flask-SocketIO
+python-iptables
+psutil
+bcrypt
+eventlet
+requests
+mypy
+pytest
+logging
+json
+os-sys
+regex
